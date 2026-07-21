@@ -184,6 +184,48 @@
     padding: 0 8px;
   }
 
+  .btn-fila {
+    border: none;
+    background: transparent;
+    font-size: 15px;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+
+  .input-fila {
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    padding: 3px 4px;
+    font-size: 12px;
+  }
+
+  .campo-manual {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .campo-manual label {
+    font-size: 12px;
+    color: var(--color-texto-suave);
+  }
+
+  .campo-manual input {
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 15px;
+  }
+
+  .producto-elegido {
+    background: #e8f0fe;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+
   @media (min-width: 560px) {
     .botonera { grid-template-columns: 1fr 1fr 1fr; }
     .btn-microfono { grid-column: 1 / span 3; }
@@ -223,12 +265,40 @@
         <div id="listaCandidatos" class="lista-candidatos"></div>
       </section>
 
+      <section id="panelManual" class="panel oculto">
+        <h2>Agregar manualmente</h2>
+        <div class="campo-manual">
+          <label>Buscar producto (nombre o código)</label>
+          <input type="text" id="inputBusquedaManual" placeholder="Ej: Lays clásica 85">
+        </div>
+        <button id="btnBuscarManual" class="btn btn-secundario" style="width:100%; margin-bottom:10px;">🔍 Buscar</button>
+        <div id="resultadosManual" class="lista-candidatos"></div>
+
+        <div id="panelManualDatos" class="oculto">
+          <div id="manualProductoElegido" class="producto-elegido"></div>
+          <div class="campo-manual">
+            <label>Bultos</label>
+            <input type="number" id="manualBultos" placeholder="0">
+          </div>
+          <div class="campo-manual">
+            <label>Unidades</label>
+            <input type="number" id="manualUnidades" placeholder="0">
+          </div>
+          <div class="campo-manual">
+            <label>Vencimiento (DD/MM/AAAA, opcional)</label>
+            <input type="text" id="manualVencimiento" placeholder="12/08/2027">
+          </div>
+          <button id="btnConfirmarManual" class="btn btn-microfono" style="width:100%;">Agregar al conteo</button>
+        </div>
+      </section>
+
       <section class="botonera">
         <button id="btnCargarCatalogo" class="btn btn-secundario">📂 Cargar catálogo</button>
         <input type="file" id="inputCatalogo" accept=".xlsx" class="oculto">
 
         <button id="btnMicrofono" class="btn btn-microfono">🎤 Iniciar Conteo</button>
 
+        <button id="btnMostrarManual" class="btn btn-secundario">➕ Agregar manual</button>
         <button id="btnVerConteo" class="btn btn-secundario">📋 Ver Conteo</button>
         <button id="btnActualizarResumen" class="btn btn-secundario">📊 Actualizar Resumen</button>
         <button id="btnExportarExcel" class="btn btn-secundario">📤 Exportar Excel</button>
@@ -248,9 +318,7 @@
       <p>Comandos de voz: "borrar último" · "modificar último" · "guardar" · "nuevo producto" · "finalizar conteo"</p>
     </footer>
 
-  </div>
-
-<script>
+  </div><script>
   // =========================================================================
   // CONFIGURACION DE LA API (Apps Script)
   // =========================================================================
@@ -277,6 +345,8 @@
   var modoModificar = false;
   var escuchando = false;
   var reconocimiento = null;
+  var ultimaFraseBuscada = '';
+  var productoManualSeleccionado = null;
 
   // =========================================================================
   // INICIALIZACION
@@ -298,6 +368,24 @@
     });
     document.getElementById('btnActualizarResumen').addEventListener('click', accionActualizarResumen);
     document.getElementById('btnExportarExcel').addEventListener('click', accionExportarExcel);
+
+    document.getElementById('btnMostrarManual').addEventListener('click', function () {
+      document.getElementById('panelManual').classList.toggle('oculto');
+    });
+    document.getElementById('btnBuscarManual').addEventListener('click', buscarManual);
+    document.getElementById('btnConfirmarManual').addEventListener('click', confirmarAgregarManual);
+
+    document.getElementById('tablaConteo').addEventListener('click', function (evento) {
+      var btnEditar = evento.target.closest('.btn-editar-fila');
+      var btnBorrar = evento.target.closest('.btn-borrar-fila');
+      var btnGuardar = evento.target.closest('.btn-guardar-fila');
+      var btnCancelar = evento.target.closest('.btn-cancelar-fila');
+
+      if (btnEditar) { iniciarEdicionFila(btnEditar.dataset.fila); }
+      if (btnBorrar) { confirmarBorradoFila(btnBorrar.dataset.fila); }
+      if (btnGuardar) { guardarEdicionFila(btnGuardar.dataset.fila); }
+      if (btnCancelar) { abrirPanelConteo(); }
+    });
   });
 
   function actualizarEstadoCatalogo() {
@@ -339,7 +427,9 @@
     };
     lector.readAsDataURL(archivo);
     evento.target.value = '';
-  }// =========================================================================
+  }
+
+  // =========================================================================
   // RECONOCIMIENTO DE VOZ (Web Speech API)
   // =========================================================================
 
@@ -487,6 +577,7 @@
   }
 
   function buscarProductoEnBackend(texto) {
+    ultimaFraseBuscada = texto;
     llamarApi('buscarProducto', { texto: texto })
       .then(function (resultado) {
         if (resultado.estado === 'sin_catalogo') {
@@ -518,6 +609,7 @@
         actualizarPanelItem();
         ocultarCandidatos();
         mostrarMensaje('info', 'Producto seleccionado: ' + producto.descripcion);
+        llamarApi('registrarAlias', { frase: ultimaFraseBuscada, codigo: producto.codigo }).catch(function () {});
       });
       contenedor.appendChild(boton);
     });
@@ -528,6 +620,79 @@
   function ocultarCandidatos() {
     document.getElementById('panelCandidatos').classList.add('oculto');
     document.getElementById('listaCandidatos').innerHTML = '';
+  }// =========================================================================
+  // CARGA MANUAL (sin voz)
+  // =========================================================================
+
+  function buscarManual() {
+    var texto = document.getElementById('inputBusquedaManual').value.trim();
+    if (!texto) {
+      mostrarMensaje('error', 'Escribí algo para buscar.');
+      return;
+    }
+
+    ultimaFraseBuscada = texto;
+
+    llamarApi('buscarProducto', { texto: texto })
+      .then(function (resultado) {
+        var contenedor = document.getElementById('resultadosManual');
+        contenedor.innerHTML = '';
+
+        if (resultado.estado === 'sin_catalogo') {
+          mostrarMensaje('error', 'Todavía no cargaste el catálogo.');
+        } else if (resultado.estado === 'sin_coincidencia') {
+          mostrarMensaje('error', 'Producto inexistente en el catálogo.');
+        } else if (resultado.estado === 'unico') {
+          seleccionarProductoManual(resultado.producto);
+        } else if (resultado.estado === 'multiple') {
+          resultado.candidatos.forEach(function (producto) {
+            var boton = document.createElement('button');
+            boton.className = 'candidato';
+            boton.innerHTML = '<div>' + producto.descripcion + '</div>' +
+              '<div class="cod">Código ' + producto.codigo + ' · UXB ' + producto.uxb + '</div>';
+            boton.addEventListener('click', function () { seleccionarProductoManual(producto); });
+            contenedor.appendChild(boton);
+          });
+        }
+      })
+      .catch(manejarError);
+  }
+
+  function seleccionarProductoManual(producto) {
+    productoManualSeleccionado = producto;
+    document.getElementById('resultadosManual').innerHTML = '';
+    document.getElementById('manualProductoElegido').textContent =
+      producto.descripcion + ' (Código ' + producto.codigo + ')';
+    document.getElementById('panelManualDatos').classList.remove('oculto');
+    llamarApi('registrarAlias', { frase: ultimaFraseBuscada, codigo: producto.codigo }).catch(function () {});
+  }
+
+  function confirmarAgregarManual() {
+    if (!productoManualSeleccionado) {
+      mostrarMensaje('error', 'Elegí un producto primero.');
+      return;
+    }
+
+    var item = {
+      codigo: productoManualSeleccionado.codigo,
+      descripcion: productoManualSeleccionado.descripcion,
+      uxb: productoManualSeleccionado.uxb,
+      bultos: parseInt(document.getElementById('manualBultos').value, 10) || 0,
+      unidades: parseInt(document.getElementById('manualUnidades').value, 10) || 0,
+      vencimiento: document.getElementById('manualVencimiento').value.trim()
+    };
+
+    llamarApi('registrarConteo', { item: item })
+      .then(function (resultado) {
+        alGuardarOk(resultado);
+        productoManualSeleccionado = null;
+        document.getElementById('panelManualDatos').classList.add('oculto');
+        document.getElementById('inputBusquedaManual').value = '';
+        document.getElementById('manualBultos').value = '';
+        document.getElementById('manualUnidades').value = '';
+        document.getElementById('manualVencimiento').value = '';
+      })
+      .catch(manejarError);
   }
 
   // =========================================================================
@@ -646,20 +811,24 @@
 
     var html = '<table class="tabla-conteo"><thead><tr>' +
       '<th>Fecha</th><th>Hora</th><th>Código</th><th>Descripción</th>' +
-      '<th>UXB</th><th>Bultos</th><th>Unid.</th><th>Total</th><th>Vence</th>' +
+      '<th>UXB</th><th>Bultos</th><th>Unid.</th><th>Total</th><th>Vence</th><th></th>' +
       '</tr></thead><tbody>';
 
     registros.slice().reverse().forEach(function (r) {
-      html += '<tr>' +
+      html += '<tr data-fila="' + r.fila + '">' +
         '<td>' + r.fecha + '</td>' +
         '<td>' + r.hora + '</td>' +
         '<td>' + r.codigo + '</td>' +
         '<td>' + r.descripcion + '</td>' +
         '<td>' + r.uxb + '</td>' +
-        '<td>' + r.bultos + '</td>' +
-        '<td>' + r.unidades + '</td>' +
-        '<td>' + r.unidadesTotales + '</td>' +
-        '<td>' + (r.vencimiento || '') + '</td>' +
+        '<td class="celda-bultos">' + r.bultos + '</td>' +
+        '<td class="celda-unidades">' + r.unidades + '</td>' +
+        '<td class="celda-total">' + r.unidadesTotales + '</td>' +
+        '<td class="celda-vencimiento">' + (r.vencimiento || '') + '</td>' +
+        '<td class="celda-acciones">' +
+          '<button class="btn-fila btn-editar-fila" data-fila="' + r.fila + '">✏️</button>' +
+          '<button class="btn-fila btn-borrar-fila" data-fila="' + r.fila + '">🗑️</button>' +
+        '</td>' +
         '</tr>';
     });
 
@@ -667,7 +836,51 @@
     document.getElementById('tablaConteo').innerHTML = html;
   }
 
-  // =========================================================================
+  function iniciarEdicionFila(fila) {
+    var tr = document.querySelector('tr[data-fila="' + fila + '"]');
+    if (!tr) return;
+
+    var celdaBultos = tr.querySelector('.celda-bultos');
+    var celdaUnidades = tr.querySelector('.celda-unidades');
+    var celdaVencimiento = tr.querySelector('.celda-vencimiento');
+    var celdaAcciones = tr.querySelector('.celda-acciones');
+
+    var bultosActual = celdaBultos.textContent.trim();
+    var unidadesActual = celdaUnidades.textContent.trim();
+    var vencimientoActual = celdaVencimiento.textContent.trim();
+
+    celdaBultos.innerHTML = '<input type="number" class="input-fila" id="editBultos' + fila + '" value="' + bultosActual + '" style="width:55px">';
+    celdaUnidades.innerHTML = '<input type="number" class="input-fila" id="editUnidades' + fila + '" value="' + unidadesActual + '" style="width:55px">';
+    celdaVencimiento.innerHTML = '<input type="text" class="input-fila" id="editVencimiento' + fila + '" value="' + vencimientoActual + '" style="width:85px" placeholder="DD/MM/AAAA">';
+    celdaAcciones.innerHTML =
+      '<button class="btn-fila btn-guardar-fila" data-fila="' + fila + '">💾</button>' +
+      '<button class="btn-fila btn-cancelar-fila" data-fila="' + fila + '">✕</button>';
+  }
+
+  function guardarEdicionFila(fila) {
+    var bultos = parseInt(document.getElementById('editBultos' + fila).value, 10) || 0;
+    var unidades = parseInt(document.getElementById('editUnidades' + fila).value, 10) || 0;
+    var vencimiento = document.getElementById('editVencimiento' + fila).value.trim();
+
+    llamarApi('editarRegistroPorFila', { fila: fila, item: { bultos: bultos, unidades: unidades, vencimiento: vencimiento } })
+      .then(function (resultado) {
+        mostrarMensaje(resultado.ok ? 'exito' : 'error',
+          resultado.ok ? 'Registro actualizado · Total: ' + resultado.unidadesTotales : resultado.mensaje);
+        abrirPanelConteo();
+      })
+      .catch(manejarError);
+  }
+
+  function confirmarBorradoFila(fila) {
+    if (!window.confirm('¿Eliminar este registro del conteo?')) return;
+
+    llamarApi('eliminarRegistroPorFila', { fila: fila })
+      .then(function (resultado) {
+        mostrarMensaje(resultado.ok ? 'exito' : 'error', resultado.mensaje);
+        abrirPanelConteo();
+      })
+      .catch(manejarError);
+  }// =========================================================================
   // UI: panel de item actual + mensajes
   // =========================================================================
 
