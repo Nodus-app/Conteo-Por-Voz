@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Conteo de Inventario por Voz</title>
+<style>
+  :root {
+    --color-primario: #1a73e8;
+    --color-primario-oscuro: #0d47a1;
+    --color-exito: #1e8e3e;
+    --color-alerta: #d93025;
+    --color-fondo: #f4f6f8;
+    --color-panel: #ffffff;
+    --color-texto: #202124;
+    --color-texto-suave: #5f6368;
+    --radio: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--color-fondo);
+    color: var(--color-texto);
+    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .app {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 12px 12px 32px 12px;
+    min-height: 100vh;
+  }
+
+  .app-header { text-align: center; padding: 10px 0 16px 0; }
+  .app-header h1 { margin: 0 0 6px 0; font-size: 24px; }
+  .estado-catalogo { font-size: 13px; color: var(--color-texto-suave); }
+
+  .panel {
+    background: var(--color-panel);
+    border-radius: var(--radio);
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-texto-suave);
+  }
+
+  .campo {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 16px;
+  }
+
+  .campo:last-child { border-bottom: none; }
+  .etiqueta { color: var(--color-texto-suave); }
+  .valor { font-weight: 600; text-align: right; }
+  .valor.destacado { color: var(--color-primario-oscuro); font-size: 18px; }
+
+  .transcripcion-texto {
+    margin: 0;
+    min-height: 24px;
+    font-size: 15px;
+    color: var(--color-texto-suave);
+  }
+
+  .mensaje-feedback {
+    padding: 12px 16px;
+    border-radius: var(--radio);
+    margin-bottom: 14px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .mensaje-feedback.exito { background: #e6f4ea; color: var(--color-exito); }
+  .mensaje-feedback.error { background: #fce8e6; color: var(--color-alerta); }
+  .mensaje-feedback.info { background: #e8f0fe; color: var(--color-primario-oscuro); }
+
+  .oculto { display: none !important; }
+
+  .lista-candidatos { display: flex; flex-direction: column; gap: 8px; }
+
+  .candidato {
+    text-align: left;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #dadce0;
+    background: #fff;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  .candidato:active { background: #f1f3f4; }
+  .candidato .cod { color: var(--color-texto-suave); font-size: 12px; }
+
+  .botonera {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 6px;
+  }
+
+  .btn {
+    border: none;
+    border-radius: var(--radio);
+    padding: 16px 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.05s ease-in-out;
+  }
+
+  .btn:active { transform: scale(0.97); }
+
+  .btn-microfono {
+    grid-column: 1 / span 2;
+    background: var(--color-primario);
+    color: #fff;
+    padding: 20px 10px;
+    font-size: 18px;
+  }
+
+  .btn-microfono.escuchando { background: var(--color-alerta); }
+
+  .btn-secundario {
+    background: #fff;
+    color: var(--color-texto);
+    border: 1px solid #dadce0;
+  }
+
+  .btn-cerrar {
+    background: transparent;
+    color: var(--color-texto-suave);
+    font-size: 18px;
+    padding: 4px 10px;
+  }
+
+  .panel-modal {
+    position: fixed;
+    top: 5vh; left: 5vw; right: 5vw; bottom: 5vh;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    max-width: 520px;
+    margin: 0 auto;
+    background: var(--color-panel);
+  }
+
+  .panel-modal-header { display: flex; justify-content: space-between; align-items: center; }
+  .tabla-scroll { overflow: auto; flex: 1; margin-top: 10px; }
+
+  table.tabla-conteo { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.tabla-conteo th, table.tabla-conteo td {
+    border-bottom: 1px solid #eee;
+    padding: 6px 4px;
+    text-align: left;
+    white-space: nowrap;
+  }
+  table.tabla-conteo th {
+    color: var(--color-texto-suave);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    background: #fff;
+  }
+
+  .app-footer {
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-texto-suave);
+    margin-top: 16px;
+    padding: 0 8px;
+  }
+
+  @media (min-width: 560px) {
+    .botonera { grid-template-columns: 1fr 1fr 1fr; }
+    .btn-microfono { grid-column: 1 / span 3; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="app">
+
+    <header class="app-header">
+      <h1>📦 Conteo Inventario</h1>
+      <div id="estadoCatalogo" class="estado-catalogo">Catálogo: cargando...</div>
+    </header>
+
+    <main class="app-main">
+
+      <section class="panel item-actual" id="panelItemActual">
+        <h2>Item actual</h2>
+        <div class="campo"><span class="etiqueta">Producto:</span><span id="itemProducto" class="valor">—</span></div>
+        <div class="campo"><span class="etiqueta">Código:</span><span id="itemCodigo" class="valor">—</span></div>
+        <div class="campo"><span class="etiqueta">Bultos:</span><span id="itemBultos" class="valor">—</span></div>
+        <div class="campo"><span class="etiqueta">Unidades:</span><span id="itemUnidades" class="valor">—</span></div>
+        <div class="campo"><span class="etiqueta">Total unidades:</span><span id="itemTotal" class="valor destacado">—</span></div>
+        <div class="campo"><span class="etiqueta">Vencimiento:</span><span id="itemVencimiento" class="valor">—</span></div>
+      </section>
+
+      <section class="panel transcripcion">
+        <h2>Escuchando</h2>
+        <p id="textoTranscripcion" class="transcripcion-texto">Presioná el micrófono para empezar…</p>
+      </section>
+
+      <section id="mensajeFeedback" class="mensaje-feedback oculto"></section>
+
+      <section id="panelCandidatos" class="panel candidatos oculto">
+        <h2>¿Cuál de estos productos es?</h2>
+        <div id="listaCandidatos" class="lista-candidatos"></div>
+      </section>
+
+      <section class="botonera">
+        <button id="btnCargarCatalogo" class="btn btn-secundario">📂 Cargar catálogo</button>
+        <input type="file" id="inputCatalogo" accept=".xlsx" class="oculto">
+
+        <button id="btnMicrofono" class="btn btn-microfono">🎤 Iniciar Conteo</button>
+
+        <button id="btnVerConteo" class="btn btn-secundario">📋 Ver Conteo</button>
+        <button id="btnActualizarResumen" class="btn btn-secundario">📊 Actualizar Resumen</button>
+        <button id="btnExportarExcel" class="btn btn-secundario">📤 Exportar Excel</button>
+      </section>
+
+      <section id="panelConteo" class="panel panel-modal oculto">
+        <div class="panel-modal-header">
+          <h2>Conteo registrado</h2>
+          <button id="btnCerrarConteo" class="btn btn-cerrar">✕</button>
+        </div>
+        <div id="tablaConteo" class="tabla-scroll"></div>
+      </section>
+
+    </main>
+
+    <footer class="app-footer">
+      <p>Comandos de voz: "borrar último" · "modificar último" · "guardar" · "nuevo producto" · "finalizar conteo"</p>
+    </footer>
+
+  </div>
+
+<script>
+  // =========================================================================
+  // CONFIGURACION DE LA API (Apps Script)
+  // =========================================================================
+  var API_URL = 'https://script.google.com/macros/s/AKfycbznDxOKVC-juo1KZhJVaUHBZ5fy3FqqDLLE4L4JA_SqvaFCSBQU2INY_g8u4tHHJszBkw/exec';
+
+  function llamarApi(accion, parametros) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita el preflight CORS
+      body: JSON.stringify({ accion: accion, parametros: parametros || {} })
+    })
+      .then(function (respuesta) { return respuesta.json(); })
+      .then(function (json) {
+        if (!json.exito) throw new Error(json.error || 'Error desconocido del servidor.');
+        return json.resultado;
+      });
+  }
+
+  // =========================================================================
+  // ESTADO GLOBAL DEL FRONTEND
+  // =========================================================================
+
+  var currentItem = { producto: null, bultos: null, unidades: null, vencimiento: null };
+  var modoModificar = false;
+  var escuchando = false;
+  var reconocimiento = null;
+
+  // =========================================================================
+  // INICIALIZACION
+  // =========================================================================
+
+  window.addEventListener('load', function () {
+    actualizarEstadoCatalogo();
+    actualizarPanelItem();
+    inicializarReconocimientoVoz();
+
+    document.getElementById('btnCargarCatalogo').addEventListener('click', function () {
+      document.getElementById('inputCatalogo').click();
+    });
+    document.getElementById('inputCatalogo').addEventListener('change', manejarSeleccionArchivo);
+    document.getElementById('btnMicrofono').addEventListener('click', alternarEscucha);
+    document.getElementById('btnVerConteo').addEventListener('click', abrirPanelConteo);
+    document.getElementById('btnCerrarConteo').addEventListener('click', function () {
+      document.getElementById('panelConteo').classList.add('oculto');
+    });
+    document.getElementById('btnActualizarResumen').addEventListener('click', accionActualizarResumen);
+    document.getElementById('btnExportarExcel').addEventListener('click', accionExportarExcel);
+  });
+
+  function actualizarEstadoCatalogo() {
+    llamarApi('contarProductosCatalogo', {})
+      .then(function (cantidad) {
+        var el = document.getElementById('estadoCatalogo');
+        el.textContent = cantidad > 0
+          ? 'Catálogo: ' + cantidad + ' productos cargados'
+          : 'Catálogo: sin productos. Cargá un Excel para empezar.';
+      })
+      .catch(manejarError);
+  }
+
+  // =========================================================================
+  // CARGA DE CATALOGO (.xlsx)
+  // =========================================================================
+
+  function manejarSeleccionArchivo(evento) {
+    var archivo = evento.target.files[0];
+    if (!archivo) return;
+
+    mostrarMensaje('info', 'Importando catálogo...');
+
+    var lector = new FileReader();
+    lector.onload = function (e) {
+      var base64Completo = e.target.result;
+      var base64 = base64Completo.substring(base64Completo.indexOf(',') + 1);
+
+      llamarApi('importarCatalogo', { base64: base64, nombreArchivo: archivo.name })
+        .then(function (resultado) {
+          if (resultado.ok) {
+            mostrarMensaje('exito', resultado.mensaje + ' (' + resultado.cantidad + ' productos)');
+          } else {
+            mostrarMensaje('error', resultado.mensaje);
+          }
+          actualizarEstadoCatalogo();
+        })
+        .catch(manejarError);
+    };
+    lector.readAsDataURL(archivo);
+    evento.target.value = '';
+  }// =========================================================================
+  // RECONOCIMIENTO DE VOZ (Web Speech API)
+  // =========================================================================
+
+  function inicializarReconocimientoVoz() {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      mostrarMensaje('error', 'Este navegador no soporta reconocimiento de voz. Usá Chrome.');
+      document.getElementById('btnMicrofono').disabled = true;
+      return;
+    }
+
+    reconocimiento = new SpeechRecognition();
+    reconocimiento.lang = 'es-AR';
+    reconocimiento.continuous = true;
+    reconocimiento.interimResults = true;
+
+    reconocimiento.onresult = function (evento) {
+      var textoIntermedio = '';
+      for (var i = evento.resultIndex; i < evento.results.length; i++) {
+        var resultado = evento.results[i];
+        if (resultado.isFinal) {
+          procesarFraseFinal(resultado[0].transcript);
+        } else {
+          textoIntermedio += resultado[0].transcript;
+        }
+      }
+      if (textoIntermedio) {
+        document.getElementById('textoTranscripcion').textContent = textoIntermedio;
+      }
+    };
+
+    reconocimiento.onerror = function (evento) {
+      if (evento.error === 'no-speech' || evento.error === 'aborted') return;
+      mostrarMensaje('error', 'Error de reconocimiento de voz: ' + evento.error);
+    };
+
+    reconocimiento.onend = function () {
+      if (escuchando) {
+        try { reconocimiento.start(); } catch (e) { /* ya estaba iniciado */ }
+      }
+    };
+  }
+
+  function alternarEscucha() {
+    var boton = document.getElementById('btnMicrofono');
+
+    if (!escuchando) {
+      escuchando = true;
+      boton.textContent = '🛑 Detener';
+      boton.classList.add('escuchando');
+      document.getElementById('textoTranscripcion').textContent = 'Escuchando…';
+      try { reconocimiento.start(); } catch (e) { /* ya iniciado */ }
+    } else {
+      escuchando = false;
+      boton.textContent = '🎤 Iniciar Conteo';
+      boton.classList.remove('escuchando');
+      reconocimiento.stop();
+    }
+  }
+
+  // =========================================================================
+  // PROCESAMIENTO DE CADA FRASE DICTADA
+  // =========================================================================
+
+  function procesarFraseFinal(transcriptCrudo) {
+    document.getElementById('textoTranscripcion').textContent = transcriptCrudo;
+
+    var normalizado = normalizarTextoJS(transcriptCrudo);
+
+    if (/\bfinalizar\s+conteo\b/.test(normalizado)) {
+      accionFinalizarConteo();
+      return;
+    }
+    if (/\bborrar\s+ultimo\b/.test(normalizado)) {
+      accionBorrarUltimo();
+      return;
+    }
+    if (/\bmodificar\s+ultimo\b/.test(normalizado)) {
+      modoModificar = true;
+      currentItem = { producto: null, bultos: null, unidades: null, vencimiento: null };
+      actualizarPanelItem();
+      mostrarMensaje('info', 'Modo modificar último: decí el producto y los datos correctos, y luego "guardar".');
+      return;
+    }
+    if (/\bnuevo\s+producto\b/.test(normalizado)) {
+      modoModificar = false;
+      currentItem = { producto: null, bultos: null, unidades: null, vencimiento: null };
+      actualizarPanelItem();
+      mostrarMensaje('info', 'Listo para un nuevo producto.');
+      return;
+    }
+    if (/\bguardar\b/.test(normalizado)) {
+      accionGuardar();
+      return;
+    }
+
+    var textoConvertido = convertirNumerosEnTextoJS(normalizado);
+    var extraccion = extraerDatos(textoConvertido);
+
+    if (extraccion.vencimiento) {
+      currentItem.vencimiento = extraccion.vencimiento;
+    }
+    if (extraccion.bultos !== null) {
+      currentItem.bultos = extraccion.bultos;
+    }
+    if (extraccion.unidades !== null) {
+      currentItem.unidades = extraccion.unidades;
+    }
+
+    actualizarPanelItem();
+
+    var textoProducto = extraccion.textoRestante.trim();
+    if (textoProducto.length > 0) {
+      buscarProductoEnBackend(textoProducto);
+    }
+  }
+
+  function extraerDatos(texto) {
+    var resultado = { vencimiento: null, bultos: null, unidades: null, textoRestante: texto };
+
+    var matchVence = resultado.textoRestante.match(/\bvence\s+(\d{1,2})\s+(\d{1,2})(?:\s+(\d{2,4}))?\b/);
+    if (matchVence) {
+      var dia = matchVence[1];
+      var mes = matchVence[2];
+      var anio = matchVence[3];
+      resultado.vencimiento = formatearFechaJS(dia, mes, anio);
+      resultado.textoRestante = resultado.textoRestante.replace(matchVence[0], ' ');
+    }
+
+    var matchBultos = resultado.textoRestante.match(/\b(\d+)\s+bultos?\b/);
+    if (matchBultos) {
+      resultado.bultos = parseInt(matchBultos[1], 10);
+      resultado.textoRestante = resultado.textoRestante.replace(matchBultos[0], ' ');
+    }
+
+    var matchUnidades = resultado.textoRestante.match(/\b(\d+)\s+unidades?\b/);
+    if (matchUnidades) {
+      resultado.unidades = parseInt(matchUnidades[1], 10);
+      resultado.textoRestante = resultado.textoRestante.replace(matchUnidades[0], ' ');
+    }
+
+    resultado.textoRestante = resultado.textoRestante.replace(/\s+/g, ' ').trim();
+    return resultado;
+  }
+
+  function buscarProductoEnBackend(texto) {
+    llamarApi('buscarProducto', { texto: texto })
+      .then(function (resultado) {
+        if (resultado.estado === 'sin_catalogo') {
+          mostrarMensaje('error', 'Todavía no cargaste el catálogo. Tocá "Cargar catálogo".');
+        } else if (resultado.estado === 'sin_coincidencia') {
+          mostrarMensaje('error', 'Producto inexistente en el catálogo.');
+        } else if (resultado.estado === 'unico') {
+          currentItem.producto = resultado.producto;
+          actualizarPanelItem();
+          ocultarCandidatos();
+        } else if (resultado.estado === 'multiple') {
+          mostrarCandidatos(resultado.candidatos);
+        }
+      })
+      .catch(manejarError);
+  }
+
+  function mostrarCandidatos(candidatos) {
+    var contenedor = document.getElementById('listaCandidatos');
+    contenedor.innerHTML = '';
+
+    candidatos.forEach(function (producto) {
+      var boton = document.createElement('button');
+      boton.className = 'candidato';
+      boton.innerHTML = '<div>' + producto.descripcion + '</div>' +
+        '<div class="cod">Código ' + producto.codigo + ' · UXB ' + producto.uxb + '</div>';
+      boton.addEventListener('click', function () {
+        currentItem.producto = producto;
+        actualizarPanelItem();
+        ocultarCandidatos();
+        mostrarMensaje('info', 'Producto seleccionado: ' + producto.descripcion);
+      });
+      contenedor.appendChild(boton);
+    });
+
+    document.getElementById('panelCandidatos').classList.remove('oculto');
+  }
+
+  function ocultarCandidatos() {
+    document.getElementById('panelCandidatos').classList.add('oculto');
+    document.getElementById('listaCandidatos').innerHTML = '';
+  }
+
+  // =========================================================================
+  // ACCIONES (guardar / borrar / modificar / resumen / exportar)
+  // =========================================================================
+
+  function accionGuardar() {
+    if (!currentItem.producto) {
+      mostrarMensaje('error', 'Todavía no hay un producto reconocido para guardar.');
+      return;
+    }
+
+    var item = {
+      codigo: currentItem.producto.codigo,
+      descripcion: currentItem.producto.descripcion,
+      uxb: currentItem.producto.uxb,
+      bultos: currentItem.bultos || 0,
+      unidades: currentItem.unidades || 0,
+      vencimiento: currentItem.vencimiento || ''
+    };
+
+    var accion = modoModificar ? 'modificarUltimoRegistro' : 'registrarConteo';
+
+    llamarApi(accion, { item: item })
+      .then(alGuardarOk)
+      .catch(manejarError);
+  }
+
+  function alGuardarOk(resultado) {
+    if (resultado.ok) {
+      mostrarMensaje('exito', resultado.mensaje + ' · Total: ' + resultado.unidadesTotales);
+    } else {
+      mostrarMensaje('error', resultado.mensaje);
+    }
+    modoModificar = false;
+    currentItem = { producto: null, bultos: null, unidades: null, vencimiento: null };
+    actualizarPanelItem();
+  }
+
+  function accionBorrarUltimo() {
+    llamarApi('borrarUltimoRegistro', {})
+      .then(function (resultado) {
+        mostrarMensaje(resultado.ok ? 'exito' : 'error', resultado.mensaje);
+      })
+      .catch(manejarError);
+  }
+
+  function accionFinalizarConteo() {
+    llamarApi('finalizarConteo', {})
+      .then(function (resultado) {
+        mostrarMensaje(resultado.ok ? 'exito' : 'error',
+          resultado.ok ? 'Conteo finalizado. Resumen actualizado (' + resultado.grupos + ' grupos).' : resultado.mensaje);
+      })
+      .catch(manejarError);
+  }
+
+  function accionActualizarResumen() {
+    mostrarMensaje('info', 'Actualizando resumen...');
+    llamarApi('actualizarResumen', {})
+      .then(function (resultado) {
+        mostrarMensaje(resultado.ok ? 'exito' : 'error',
+          resultado.ok ? 'Resumen actualizado (' + resultado.grupos + ' grupos).' : resultado.mensaje);
+      })
+      .catch(manejarError);
+  }
+
+  function accionExportarExcel() {
+    mostrarMensaje('info', 'Generando archivo Excel...');
+    llamarApi('exportarExcel', {})
+      .then(function (resultado) {
+        if (!resultado.ok) {
+          mostrarMensaje('error', resultado.mensaje);
+          return;
+        }
+        descargarBase64Xlsx(resultado.base64, resultado.nombreArchivo);
+        mostrarMensaje('exito', 'Archivo generado: ' + resultado.nombreArchivo);
+      })
+      .catch(manejarError);
+  }
+
+  function descargarBase64Xlsx(base64, nombreArchivo) {
+    var bytes = atob(base64);
+    var arreglo = new Uint8Array(bytes.length);
+    for (var i = 0; i < bytes.length; i++) {
+      arreglo[i] = bytes.charCodeAt(i);
+    }
+    var blob = new Blob([arreglo], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    var enlace = document.createElement('a');
+    enlace.href = URL.createObjectURL(blob);
+    enlace.download = nombreArchivo;
+    document.body.appendChild(enlace);
+    enlace.click();
+    document.body.removeChild(enlace);
+  }
+
+  // =========================================================================
+  // PANEL "VER CONTEO"
+  // =========================================================================
+
+  function abrirPanelConteo() {
+    document.getElementById('tablaConteo').innerHTML = 'Cargando...';
+    document.getElementById('panelConteo').classList.remove('oculto');
+
+    llamarApi('obtenerConteo', {})
+      .then(renderizarTablaConteo)
+      .catch(manejarError);
+  }
+
+  function renderizarTablaConteo(registros) {
+    if (!registros || registros.length === 0) {
+      document.getElementById('tablaConteo').innerHTML = '<p>Todavía no hay registros.</p>';
+      return;
+    }
+
+    var html = '<table class="tabla-conteo"><thead><tr>' +
+      '<th>Fecha</th><th>Hora</th><th>Código</th><th>Descripción</th>' +
+      '<th>UXB</th><th>Bultos</th><th>Unid.</th><th>Total</th><th>Vence</th>' +
+      '</tr></thead><tbody>';
+
+    registros.slice().reverse().forEach(function (r) {
+      html += '<tr>' +
+        '<td>' + r.fecha + '</td>' +
+        '<td>' + r.hora + '</td>' +
+        '<td>' + r.codigo + '</td>' +
+        '<td>' + r.descripcion + '</td>' +
+        '<td>' + r.uxb + '</td>' +
+        '<td>' + r.bultos + '</td>' +
+        '<td>' + r.unidades + '</td>' +
+        '<td>' + r.unidadesTotales + '</td>' +
+        '<td>' + (r.vencimiento || '') + '</td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('tablaConteo').innerHTML = html;
+  }
+
+  // =========================================================================
+  // UI: panel de item actual + mensajes
+  // =========================================================================
+
+  function actualizarPanelItem() {
+    document.getElementById('itemProducto').textContent =
+      currentItem.producto ? currentItem.producto.descripcion : '—';
+    document.getElementById('itemCodigo').textContent =
+      currentItem.producto ? currentItem.producto.codigo : '—';
+    document.getElementById('itemBultos').textContent =
+      currentItem.bultos !== null ? currentItem.bultos : '—';
+    document.getElementById('itemUnidades').textContent =
+      currentItem.unidades !== null ? currentItem.unidades : '—';
+    document.getElementById('itemVencimiento').textContent =
+      currentItem.vencimiento || '—';
+
+    var total = '—';
+    if (currentItem.producto) {
+      var bultos = currentItem.bultos || 0;
+      var unidades = currentItem.unidades || 0;
+      total = (bultos * currentItem.producto.uxb) + unidades;
+    }
+    document.getElementById('itemTotal').textContent = total;
+  }
+
+  var timeoutMensaje = null;
+
+  function mostrarMensaje(tipo, texto) {
+    var el = document.getElementById('mensajeFeedback');
+    el.className = 'mensaje-feedback ' + tipo;
+    el.textContent = texto;
+
+    if (timeoutMensaje) clearTimeout(timeoutMensaje);
+    timeoutMensaje = setTimeout(function () {
+      el.classList.add('oculto');
+    }, 6000);
+  }
+
+  function manejarError(error) {
+    mostrarMensaje('error', 'Error: ' + (error && error.message ? error.message : error));
+  }
+
+  // =========================================================================
+  // UTILIDADES JS
+  // =========================================================================
+
+  function normalizarTextoJS(texto) {
+    if (!texto) return '';
+    return texto
+      .toString()
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  var NUMEROS_PALABRA_JS = {
+    'cero': 0, 'uno': 1, 'un': 1, 'una': 1, 'dos': 2, 'tres': 3, 'cuatro': 4,
+    'cinco': 5, 'seis': 6, 'siete': 7, 'ocho': 8, 'nueve': 9, 'diez': 10,
+    'once': 11, 'doce': 12, 'trece': 13, 'catorce': 14, 'quince': 15,
+    'dieciseis': 16, 'diecisiete': 17, 'dieciocho': 18, 'diecinueve': 19,
+    'veinte': 20, 'veintiuno': 21, 'veintidos': 22, 'veintitres': 23,
+    'veinticuatro': 24, 'veinticinco': 25, 'veintiseis': 26, 'veintisiete': 27,
+    'veintiocho': 28, 'veintinueve': 29, 'treinta': 30, 'cuarenta': 40,
+    'cincuenta': 50, 'sesenta': 60, 'setenta': 70, 'ochenta': 80,
+    'noventa': 90, 'cien': 100, 'ciento': 100
+  };
+
+  function convertirNumerosEnTextoJS(textoNormalizado) {
+    var palabras = textoNormalizado.split(' ');
+    var resultado = [];
+    var i = 0;
+
+    while (i < palabras.length) {
+      var actual = palabras[i];
+
+      if (NUMEROS_PALABRA_JS.hasOwnProperty(actual) && NUMEROS_PALABRA_JS[actual] >= 20 &&
+          NUMEROS_PALABRA_JS[actual] % 10 === 0 && NUMEROS_PALABRA_JS[actual] < 100) {
+        var siguiente = palabras[i + 1];
+        var despuesDelY = palabras[i + 2];
+        if (siguiente === 'y' && despuesDelY && NUMEROS_PALABRA_JS.hasOwnProperty(despuesDelY) &&
+            NUMEROS_PALABRA_JS[despuesDelY] < 10) {
+          resultado.push(String(NUMEROS_PALABRA_JS[actual] + NUMEROS_PALABRA_JS[despuesDelY]));
+          i += 3;
+          continue;
+        }
+      }
+
+      if (NUMEROS_PALABRA_JS.hasOwnProperty(actual)) {
+        resultado.push(String(NUMEROS_PALABRA_JS[actual]));
+        i += 1;
+        continue;
+      }
+
+      resultado.push(actual);
+      i += 1;
+    }
+
+    return resultado.join(' ');
+  }
+
+  function formatearFechaJS(dia, mes, anio) {
+    dia = parseInt(dia, 10);
+    mes = parseInt(mes, 10);
+    if (isNaN(dia) || isNaN(mes) || dia < 1 || dia > 31 || mes < 1 || mes > 12) return '';
+
+    var anioFinal = anio ? parseInt(anio, 10) : new Date().getFullYear();
+    if (anioFinal < 100) anioFinal += 2000;
+
+    var diaStr = (dia < 10 ? '0' : '') + dia;
+    var mesStr = (mes < 10 ? '0' : '') + mes;
+    return diaStr + '/' + mesStr + '/' + anioFinal;
+  }
+</script>
+</body>
+</html>
